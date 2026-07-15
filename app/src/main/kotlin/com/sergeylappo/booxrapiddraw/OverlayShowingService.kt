@@ -156,22 +156,26 @@ class OverlayShowingService : Service() {
                 oldRight: Int,
                 oldBottom: Int
             ) {
-                if (touchHelperInitialized) return
-
-                // Use raw view dimensions — do NOT call getLocalVisibleRect().
-                // It clips the rect to the visible area (excluding status bar),
-                // which offsets EMR pen coordinates and misaligns strokes.
+                // Use raw view dimensions for the active drawing region.
                 val bounds = Rect(0, 0, right - left, bottom - top)
 
-                touchHelper.setStrokeColor(Color.BLACK)
-                touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
-                touchHelper.openRawDrawing()
-                touchHelper.setStrokeWidth(STROKE_WIDTH).setLimitRect(bounds, listOf())
-                touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
-                // Let finger touches pass through to the underlying app.
-                // Only the stylus is captured for drawing.
-                touchHelper.enableFingerTouch(false)
-                touchHelperInitialized = true
+                // One-time setup: stroke style, open raw drawing, input reader.
+                if (!touchHelperInitialized) {
+                    touchHelper.setStrokeColor(Color.BLACK)
+                    touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
+                    touchHelper.openRawDrawing()
+                    touchHelper.setStrokeWidth(STROKE_WIDTH)
+                    touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
+                    // Let finger touches pass through to the underlying app.
+                    // Only the stylus is captured for drawing.
+                    touchHelper.enableFingerTouch(false)
+                    touchHelperInitialized = true
+                }
+
+                // Always refresh limitRect on layout change so the coordinate
+                // mapping stays correct if the view's screen position shifts
+                // (status bar show/hide, rotation, etc.).
+                touchHelper.setLimitRect(bounds, listOf())
             }
         })
 
