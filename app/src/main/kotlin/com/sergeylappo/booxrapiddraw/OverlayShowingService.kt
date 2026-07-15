@@ -168,6 +168,9 @@ class OverlayShowingService : Service() {
                 touchHelper.openRawDrawing()
                 touchHelper.setStrokeWidth(STROKE_WIDTH).setLimitRect(bounds, listOf())
                 touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
+                // Let finger touches pass through to the underlying app.
+                // Only the stylus is captured for drawing.
+                touchHelper.enableFingerTouch(false)
                 touchHelperInitialized = true
             }
         })
@@ -207,6 +210,7 @@ class OverlayShowingService : Service() {
 
         override fun onPenActive(point: TouchPoint?) {
             touchHelper.setRawDrawingEnabled(true)
+            touchHelper.isRawDrawingRenderEnabled = true
         }
 
         override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {}
@@ -220,6 +224,7 @@ class OverlayShowingService : Service() {
         override fun onRawErasingTouchPointListReceived(touchPointList: TouchPointList?) {}
 
         override fun onPenUpRefresh(refreshRect: RectF?) {
+            touchHelper.isRawDrawingRenderEnabled = false
             super.onPenUpRefresh(refreshRect)
         }
     }
