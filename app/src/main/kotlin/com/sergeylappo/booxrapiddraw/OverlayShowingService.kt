@@ -33,7 +33,7 @@ import com.onyx.android.sdk.pen.TouchHelper
 import com.onyx.android.sdk.pen.data.TouchPointList
 
 private const val CHANNEL_ID = "rapid_draw_channel_overlay_01"
-private const val STROKE_WIDTH = 5.0f
+private const val STROKE_WIDTH = 6.0f
 private const val WATCHDOG_INTERVAL_MS = 2000L
 
 class OverlayShowingService : Service() {
@@ -162,9 +162,10 @@ class OverlayShowingService : Service() {
                 // One-time setup: stroke style, open raw drawing, input reader.
                 if (!touchHelperInitialized) {
                     touchHelper.setStrokeColor(Color.BLACK)
-                    touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
+                    touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_MARKER)
                     touchHelper.openRawDrawing()
                     touchHelper.setStrokeWidth(STROKE_WIDTH)
+                    touchHelper.setFilterRepeatMovePoint(true)
                     touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
                     // Let finger touches pass through to the underlying app.
                     // Only the stylus is captured for drawing.
