@@ -20,7 +20,6 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.View.OnLayoutChangeListener
 import android.view.WindowManager
-import android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
 import android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 import android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
 import android.view.WindowManager.LayoutParams.MATCH_PARENT
@@ -120,7 +119,7 @@ class OverlayShowingService : Service() {
             MATCH_PARENT,
             MATCH_PARENT,
             TYPE_APPLICATION_OVERLAY,
-            FLAG_NOT_FOCUSABLE or FLAG_NOT_TOUCHABLE or FLAG_LAYOUT_NO_LIMITS,
+            FLAG_NOT_FOCUSABLE or FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSPARENT
         )
         // alpha 1.0: transparency comes from PixelFormat.TRANSPARENT, not window alpha.
