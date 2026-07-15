@@ -21,11 +21,11 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.sergeylappo.booxrapiddraw"
+        applicationId = "com.jkf87.booxrapiddraw"
         minSdk = 28
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.0.6-alpha"
+        versionCode = 7
+        versionName = "0.0.6-alpha-fix"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
