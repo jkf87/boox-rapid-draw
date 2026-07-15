@@ -1,40 +1,57 @@
-## About the Project
-Boox Rapid Draw is a tool designed to enable the use of Boox stylus devices with a stylus in applications beyond those provided by Boox. This project is an early prototype, and it modifies the default behavior of your device.
+## 프로젝트 소개
 
-## F.A.Q.
-Q: **How to install the APP?** <br>
+**Boox Rapid Draw**는 Boox(온닉스) 전자잉크 기기에서 **공식 앱 밖에서도 스타일러스로 빠르게 필기**할 수 있게 해주는 도구입니다. 어떤 앱을 보고 있든 펜만 대면 즉시 화면 위에 메모를 남길 수 있습니다. 초기 프로토타입이며, 기기의 기본 동작을 수정합니다.
+
+> 이 프로젝트는 [sergeylappo/boox-rapid-draw](https://github.com/sergeylappo/boox-rapid-draw)를 기반으로 오버레이 위치 정확도와 표시 안정성을 개선한 포크입니다.
+
+## 개선 사항 (Fork Changes)
+
+| 문제 | 원인 | 수정 |
+|------|------|------|
+| 펜 필기 위치가 어긋남 | `getLocalVisibleRect()`가 상태바 영역만큼 드로잉 영역을 잘라내서 EMR 펜 좌표와 매핑이 틀어짐 | `getLocalVisibleRect()` 호출 제거, 실제 뷰 크기 사용 |
+| 펜을 떼면 필기가 사라짐 | `onPenUpRefresh`에서 렌더링을 끄기만 하고 다시 켜지 않음 | `onPenActive`에서 렌더링 재활성화 추가 |
+| 필기가 너무 흐림 | 윈도우 알파가 `0.2f`(20%)로 설정되어 있음 | 알파를 `1.0f`로 변경, 투명도는 `PixelFormat.TRANSPARENT`가 담당 |
+| 오버레이 동작이 불안정 | 레이아웃 리스너가 스스로를 재등록하여 기하급수적으로 누적됨 | 초기화 가드 플래그(`touchHelperInitialized`)로 1회만 실행 |
+| 오버레이가 사라짐 | 시스템이나 전체화면 앱이 오버레이를 떼어냈을 때 복구 불가 | 2초 간격 워치독으로 자동 재부착 |
+| 화면 커버리지 부족 | 시스템 바 영역을 덮지 못함 | `FLAG_LAYOUT_NO_LIMITS` 추가 |
+
+## 자주 묻는 질문
+
+**Q: 어떻게 설치하나요?**
 <details>
-  <summary>A: Android and the APP would guide you through the installation process, but detailed manual is under the spoiler</summary>
-  
-  1. Download the APK
-  2. Click on it
-  3. Accept that you agree that app might be dangerous for your device
-  4. Click install
-  5. After the installation is done - ensure that you don't have "freeze" on the app (the app would have a snowflake in the corner)
-     1. If the app has it - long click on the icon
-     2. Click unfreeze
-  6. Start the APP
-  7. Read the warning and if you accept it, click "Allow", this would redirect you to settings
-  8. Open "Boox Rapid Draw" application and enable "Allow display over other apps" toggle.
-  9. You're set! The app should be functional right away!
-  ![install](https://github.com/user-attachments/assets/8bf3f291-911f-4a09-aa7f-e0bf7af95451)
+<summary>A: 안드로이드와 앱이 설치 과정을 안내합니다. 수동 설치 방법은 아래를 펼쳐보세요.</summary>
+
+1. APK 파일을 다운로드합니다
+2. APK 파일을 탭합니다
+3. 기기에 위험을 줄 수 있다는 경고에 동의합니다
+4. 설치를 누릅니다
+5. 설치가 완료되면 앱이 "절전 모드"(freeze) 상태가 아닌지 확인합니다 (앱 아이콘에 눈송이 표시가 없어야 함)
+   1. 눈송이가 있다면 앱 아이콘을 길게 누릅니다
+   2. "절전 해제"를 누릅니다
+6. 앱을 실행합니다
+7. 경고문을 읽고 동의하면 "허용"을 누릅니다. 설정 화면으로 이동합니다
+8. "Boox Rapid Draw" 애플리케이션에서 "다른 앱 위에 표시" 토글을 켭니다
+9. 끝입니다! 바로 사용할 수 있습니다!
+
+![install](https://github.com/user-attachments/assets/8bf3f291-911f-4a09-aa7f-e0bf7af95451)
 </details>
 
-Q: **How did you configure it to be accessible in navi ball?** <br>
+**Q: 네비게이션 볼에서 빠르게 접근하려면?**
 <details>
-  <summary>A: By setting one of the Navigation ball's options to open app. Expand for more details</summary>
+<summary>A: 네비게이션 볼 옵션 중 하나를 이 앱 실행으로 지정하면 됩니다. 자세한 방법은 아래를 펼쳐보세요.</summary>
 
-  1. Click on navi ball
-  2. Click on navi ball settings icon
-  3. Select any free option, or the option you're ready to give up on
-  4. Select "Open app" option
-  5. Click on "None" link
-  6. Select "Boox Rapid Draw"
-  7. Return back two times
-  8. You're quick access is ready to rock!
-  ![configure_navi_ball](https://github.com/user-attachments/assets/c40c39aa-7a7d-4ad0-afa6-9bfa14fd9a82)
+1. 네비게이션 볼을 누릅니다
+2. 네비게이션 볼 설정 아이콘을 누릅니다
+3. 비어 있는 옵션이나 교체해도 괜찮은 옵션을 선택합니다
+4. "앱 열기" 옵션을 선택합니다
+5. "없음" 링크를 누릅니다
+6. "Boox Rapid Draw"를 선택합니다
+7. 뒤로 버튼을 두 번 누릅니다
+8. 빠른 실행이 준비되었습니다!
 
+![configure_navi_ball](https://github.com/user-attachments/assets/c40c39aa-7a7d-4ad0-afa6-9bfa14fd9a82)
 </details>
 
-## Disclaimer
-The author of this application is not affiliated with Boox in any way. Use of this app is at your own risk. This is a prototype software, which may cause damage to your device. The author is not responsible for any damage caused by using this app directly or indirectly.
+## 면책 조항
+
+본 애플리케이션의 저자는 Boox와 어떠한 관련도 없습니다. 이 앱의 사용은 본인 책임하에 이루어집니다. 이 프로토타입 소프트웨어는 기기에 손상을 입힐 수 있습니다. 직간접적으로 본 앱 사용으로 인해 발생하는 모든 손해에 대해 저자는 책임을 지지 않습니다.

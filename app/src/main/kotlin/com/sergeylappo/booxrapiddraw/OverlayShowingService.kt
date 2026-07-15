@@ -12,12 +12,15 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.SurfaceView
 import android.view.View
 import android.view.View.OnLayoutChangeListener
 import android.view.WindowManager
+import android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
 import android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
 import android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
 import android.view.WindowManager.LayoutParams.MATCH_PARENT
@@ -32,6 +35,7 @@ import com.onyx.android.sdk.pen.data.TouchPointList
 
 private const val CHANNEL_ID = "rapid_draw_channel_overlay_01"
 private const val STROKE_WIDTH = 3.0f
+private const val WATCHDOG_INTERVAL_MS = 2000L
 
 class OverlayShowingService : Service() {
     private val paint = Paint()
@@ -39,6 +43,15 @@ class OverlayShowingService : Service() {
     private lateinit var touchHelper: TouchHelper
     private lateinit var wm: WindowManager
     private lateinit var overlayPaintingView: SurfaceView
+    private lateinit var overlayParams: WindowManager.LayoutParams
+    private var touchHelperInitialized = false
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            ensureOverlayActive()
+            watchdogHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+        }
+    }
 
     override fun onBind(intent: Intent) = null
 
@@ -53,6 +66,7 @@ class OverlayShowingService : Service() {
 
         initPaint()
         initSurfaceView()
+        watchdogHandler.postDelayed(watchdogRunnable, WATCHDOG_INTERVAL_MS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -102,25 +116,21 @@ class OverlayShowingService : Service() {
         overlayPaintingView.holder.setFormat(PixelFormat.TRANSPARENT)
         overlayPaintingView.alpha = 1.0f
 
-        val topLeftParams = WindowManager.LayoutParams(
+        overlayParams = WindowManager.LayoutParams(
             MATCH_PARENT,
             MATCH_PARENT,
             TYPE_APPLICATION_OVERLAY,
-            FLAG_NOT_FOCUSABLE or FLAG_NOT_TOUCHABLE,
+            FLAG_NOT_FOCUSABLE or FLAG_NOT_TOUCHABLE or FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSPARENT
         )
-        topLeftParams.alpha = 0.2f
-        topLeftParams.gravity = Gravity.START or Gravity.TOP
+        // alpha 1.0: transparency comes from PixelFormat.TRANSPARENT, not window alpha.
+        // The old 0.2f made strokes nearly invisible on e-ink.
+        overlayParams.alpha = 1.0f
+        overlayParams.gravity = Gravity.START or Gravity.TOP
+        overlayParams.x = 0
+        overlayParams.y = 0
 
-        //        TODO this is duplicated
-        //        TODO actual bottom place is calculated incorrectly due to the status bar...
-        val displayMetrics = resources.displayMetrics
-        val bounds = Rect(0, 0, displayMetrics.widthPixels, displayMetrics.heightPixels)
-
-        topLeftParams.x = bounds.left
-        topLeftParams.y = bounds.top
-
-        wm.addView(overlayPaintingView, topLeftParams)
+        wm.addView(overlayPaintingView, overlayParams)
     }
 
     private fun initPaint() {
@@ -147,22 +157,44 @@ class OverlayShowingService : Service() {
                 oldRight: Int,
                 oldBottom: Int
             ) {
-                val bounds = Rect(0, 0, right, bottom)
-                overlayPaintingView.getLocalVisibleRect(bounds)
+                if (touchHelperInitialized) return
+
+                // Use raw view dimensions — do NOT call getLocalVisibleRect().
+                // It clips the rect to the visible area (excluding status bar),
+                // which offsets EMR pen coordinates and misaligns strokes.
+                val bounds = Rect(0, 0, right - left, bottom - top)
+
                 touchHelper.setStrokeColor(Color.BLACK)
                 touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
                 touchHelper.openRawDrawing()
                 touchHelper.setStrokeWidth(STROKE_WIDTH).setLimitRect(bounds, listOf())
                 touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
-                overlayPaintingView.addOnLayoutChangeListener(this)
+                touchHelperInitialized = true
             }
         })
 
         overlayPaintingView.setOnTouchListener { _: View?, _: MotionEvent? -> true }
     }
 
+    /**
+     * Periodic check to ensure the overlay window stays attached.
+     * If the system or a fullscreen app detached it, re-attach.
+     */
+    private fun ensureOverlayActive() {
+        if (!::overlayPaintingView.isInitialized || !::overlayParams.isInitialized) return
+        if (overlayPaintingView.windowToken == null) {
+            try {
+                wm.addView(overlayPaintingView, overlayParams)
+                touchHelperInitialized = false
+            } catch (_: Exception) {
+                // Display not ready or view already attached
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        watchdogHandler.removeCallbacks(watchdogRunnable)
         wm.removeViewImmediate(overlayPaintingView)
         touchHelper.closeRawDrawing()
     }
@@ -176,6 +208,7 @@ class OverlayShowingService : Service() {
 
         override fun onPenActive(point: TouchPoint?) {
             touchHelper.setRawDrawingEnabled(true)
+            touchHelper.isRawDrawingRenderEnabled = true
         }
 
         override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {}
