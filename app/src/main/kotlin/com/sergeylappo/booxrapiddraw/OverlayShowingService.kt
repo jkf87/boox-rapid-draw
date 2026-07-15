@@ -33,7 +33,7 @@ import com.onyx.android.sdk.pen.TouchHelper
 import com.onyx.android.sdk.pen.data.TouchPointList
 
 private const val CHANNEL_ID = "rapid_draw_channel_overlay_01"
-private const val STROKE_WIDTH = 3.0f
+private const val STROKE_WIDTH = 5.0f
 private const val WATCHDOG_INTERVAL_MS = 2000L
 
 class OverlayShowingService : Service() {
@@ -164,7 +164,7 @@ class OverlayShowingService : Service() {
                 val bounds = Rect(0, 0, right - left, bottom - top)
 
                 touchHelper.setStrokeColor(Color.BLACK)
-                touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
+                touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
                 touchHelper.openRawDrawing()
                 touchHelper.setStrokeWidth(STROKE_WIDTH).setLimitRect(bounds, listOf())
                 touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
@@ -207,7 +207,6 @@ class OverlayShowingService : Service() {
 
         override fun onPenActive(point: TouchPoint?) {
             touchHelper.setRawDrawingEnabled(true)
-            touchHelper.isRawDrawingRenderEnabled = true
         }
 
         override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {}
@@ -221,7 +220,6 @@ class OverlayShowingService : Service() {
         override fun onRawErasingTouchPointListReceived(touchPointList: TouchPointList?) {}
 
         override fun onPenUpRefresh(refreshRect: RectF?) {
-            touchHelper.isRawDrawingRenderEnabled = false
             super.onPenUpRefresh(refreshRect)
         }
     }
