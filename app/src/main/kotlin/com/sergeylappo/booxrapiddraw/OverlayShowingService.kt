@@ -29,23 +29,14 @@ import android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
-import com.onyx.android.sdk.api.device.epd.EpdController
-import com.onyx.android.sdk.api.device.epd.UpdateMode
 import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
 import com.onyx.android.sdk.pen.data.TouchPointList
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
 
 private const val CHANNEL_ID = "rapid_draw_channel_overlay_01"
-private const val STROKE_WIDTH = 4.0f
+private const val STROKE_WIDTH = 3.0f
 private const val WATCHDOG_INTERVAL_MS = 2000L
-
-// Smoothing: the higher, the smoother (but more lag). 0 = no smoothing.
-private const val SMOOTHING_FACTOR = 0.35f
 
 class OverlayShowingService : Service() {
     private val strokePaint = Paint()
@@ -56,12 +47,6 @@ class OverlayShowingService : Service() {
     private lateinit var overlayParams: WindowManager.LayoutParams
 
     private var touchHelperInitialized = false
-
-    // Stroke tracking for custom Canvas rendering
-    private var lastPoint: TouchPoint? = null
-    private var midPointX = 0f
-    private var midPointY = 0f
-    private var hasMidPoint = false
 
     private val watchdogHandler = Handler(Looper.getMainLooper())
     private val watchdogRunnable = object : Runnable {
@@ -75,13 +60,9 @@ class OverlayShowingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-
         createForegroundNotification()
-
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
-
         createOverlayPaintingView()
-
         initPaint()
         initSurfaceView()
         watchdogHandler.postDelayed(watchdogRunnable, WATCHDOG_INTERVAL_MS)
@@ -93,36 +74,28 @@ class OverlayShowingService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-
         Toast.makeText(this, "Starting Rapid Draw Service", Toast.LENGTH_SHORT).show()
         return START_STICKY
     }
 
     private fun createForegroundNotification() {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
         notificationManager.createNotificationChannel(
             NotificationChannel(
-                CHANNEL_ID,
-                "Boox Rapid draw overlay service",
-                NotificationManager.IMPORTANCE_HIGH
+                CHANNEL_ID, "Boox Rapid draw overlay service", NotificationManager.IMPORTANCE_HIGH
             )
         )
-
         val pendingIntent = PendingIntent.getService(
-            this,
-            0,
+            this, 0,
             Intent(this, OverlayShowingService::class.java).apply { action = "STOP" },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.overlay_service_notification_content_title))
             .setContentText(getString(R.string.overlay_service_notification_content))
             .setSmallIcon(R.drawable.rapid_draw)
             .addAction(NotificationCompat.Action.Builder(null, "Stop", pendingIntent).build())
             .build()
-
         @Suppress("InlinedApi")
         ServiceCompat.startForeground(this, 1, notification, FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
     }
@@ -134,8 +107,7 @@ class OverlayShowingService : Service() {
         overlayPaintingView.alpha = 1.0f
 
         overlayParams = WindowManager.LayoutParams(
-            MATCH_PARENT,
-            MATCH_PARENT,
+            MATCH_PARENT, MATCH_PARENT,
             TYPE_APPLICATION_OVERLAY,
             FLAG_NOT_FOCUSABLE or FLAG_NOT_TOUCHABLE,
             PixelFormat.TRANSPARENT
@@ -144,7 +116,6 @@ class OverlayShowingService : Service() {
         overlayParams.gravity = Gravity.START or Gravity.TOP
         overlayParams.x = 0
         overlayParams.y = 0
-
         wm.addView(overlayPaintingView, overlayParams)
     }
 
@@ -157,35 +128,65 @@ class OverlayShowingService : Service() {
         strokePaint.strokeJoin = Paint.Join.ROUND
     }
 
+    /**
+     * Render a complete stroke from a TouchPointList onto the SurfaceView Canvas
+     * with anti-aliasing and quadratic bezier smoothing.
+     * Called after the SF-rendered real-time stroke is done, to overlay a
+     * higher-quality version that becomes visible on the pen-up e-ink refresh.
+     */
+    private fun renderStrokeOnCanvas(points: TouchPointList) {
+        val allPoints = points.points ?: return
+        if (allPoints.size < 2) return
+
+        val holder: SurfaceHolder = overlayPaintingView.holder
+        val canvas = holder.lockCanvas() ?: return
+
+        val path = Path()
+        val first = allPoints[0]
+        path.moveTo(first.x, first.y)
+
+        if (allPoints.size == 2) {
+            path.lineTo(allPoints[1].x, allPoints[1].y)
+        } else {
+            // Quadratic bezier smoothing: use midpoints as endpoints,
+            // actual points as control points.
+            for (i in 1 until allPoints.size - 1) {
+                val p = allPoints[i]
+                val next = allPoints[i + 1]
+                val midX = (p.x + next.x) / 2f
+                val midY = (p.y + next.y) / 2f
+                path.quadTo(p.x, p.y, midX, midY)
+            }
+            // Final segment to the last point
+            val last = allPoints[allPoints.size - 1]
+            path.lineTo(last.x, last.y)
+        }
+
+        canvas.drawPath(path, strokePaint)
+        holder.unlockCanvasAndPost(canvas)
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun initSurfaceView() {
         touchHelper = TouchHelper.create(overlayPaintingView, 2, callback)
         touchHelper.setPenUpRefreshTimeMs(1000)
         overlayPaintingView.addOnLayoutChangeListener(object : OnLayoutChangeListener {
             override fun onLayoutChange(
-                v: View,
-                left: Int,
-                top: Int,
-                right: Int,
-                bottom: Int,
-                oldLeft: Int,
-                oldTop: Int,
-                oldRight: Int,
-                oldBottom: Int
+                v: View, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
             ) {
                 val bounds = Rect(0, 0, right - left, bottom - top)
 
                 if (!touchHelperInitialized) {
                     touchHelper.setStrokeColor(Color.BLACK)
+                    // SF rendering handles real-time display (rough but instant).
+                    // Canvas overlay (renderStrokeOnCanvas) provides final quality.
                     touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_MARKER)
                     touchHelper.openRawDrawing()
                     touchHelper.setStrokeWidth(STROKE_WIDTH)
                     touchHelper.setFilterRepeatMovePoint(true)
                     touchHelper.setRawInputReaderEnable(!touchHelper.isRawDrawingInputEnabled)
                     touchHelper.enableFingerTouch(false)
-                    // Disable SDK's SF rendering — we render on Canvas ourselves
-                    // for full anti-aliasing and curve smoothing.
-                    touchHelper.isRawDrawingRenderEnabled = false
                     touchHelperInitialized = true
                 }
 
@@ -196,78 +197,13 @@ class OverlayShowingService : Service() {
         overlayPaintingView.setOnTouchListener { _: View?, _: MotionEvent? -> true }
     }
 
-    /**
-     * Draw a smoothed line segment from the last point to the current point
-     * on the SurfaceView's Canvas using quadratic bezier interpolation.
-     */
-    private fun drawSegment(current: TouchPoint) {
-        val prev = lastPoint ?: run {
-            // First point of a stroke — nothing to draw yet.
-            lastPoint = current
-            midPointX = current.x
-            midPointY = current.y
-            hasMidPoint = true
-            return
-        }
-
-        val holder: SurfaceHolder = overlayPaintingView.holder
-        val canvas = holder.lockCanvas() ?: return
-
-        val path = Path()
-
-        // Use midpoint between prev and current as the bezier endpoint,
-        // and prev as the control point. This produces smooth curves.
-        val newMidX = (prev.x + current.x) / 2f
-        val newMidY = (prev.y + current.y) / 2f
-
-        if (hasMidPoint) {
-            path.moveTo(midPointX, midPointY)
-            path.quadTo(prev.x, prev.y, newMidX, newMidY)
-        } else {
-            path.moveTo(prev.x, prev.y)
-            path.lineTo(current.x, current.y)
-        }
-
-        canvas.drawPath(path, strokePaint)
-        holder.unlockCanvasAndPost(canvas)
-
-        midPointX = newMidX
-        midPointY = newMidY
-        hasMidPoint = true
-        lastPoint = current
-    }
-
-    /**
-     * Trigger an e-ink screen refresh for the given region so the
-     * Canvas-rendered strokes become visible on the physical display.
-     */
-    private fun refreshEink(rect: RectF?) {
-        if (rect != null) {
-            EpdController.refreshScreenRegion(
-                overlayPaintingView,
-                rect.left.toInt(),
-                rect.top.toInt(),
-                (rect.right - rect.left).toInt(),
-                (rect.bottom - rect.top).toInt(),
-                UpdateMode.GU
-            )
-        } else {
-            EpdController.invalidate(overlayPaintingView, UpdateMode.GU)
-        }
-    }
-
-    /**
-     * Periodic check to ensure the overlay window stays attached.
-     */
     private fun ensureOverlayActive() {
         if (!::overlayPaintingView.isInitialized || !::overlayParams.isInitialized) return
         if (overlayPaintingView.windowToken == null) {
             try {
                 wm.addView(overlayPaintingView, overlayParams)
                 touchHelperInitialized = false
-            } catch (_: Exception) {
-                // Display not ready or view already attached
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -279,56 +215,37 @@ class OverlayShowingService : Service() {
     }
 
     private val callback: RawInputCallback = object : RawInputCallback() {
-        override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint?) {
-            // Start a new stroke
-            lastPoint = touchPoint
-            hasMidPoint = false
-            if (touchPoint != null) {
-                midPointX = touchPoint.x
-                midPointY = touchPoint.y
-            }
-        }
+        override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint?) {}
 
-        override fun onRawDrawingTouchPointMoveReceived(touchPoint: TouchPoint?) {
-            // Draw incrementally as the pen moves
-            if (touchPoint != null) {
-                drawSegment(touchPoint)
-            }
-        }
+        override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint?) {}
 
-        override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint?) {
-            // Draw the final segment to the end point
-            if (touchPoint != null && lastPoint != null) {
-                val holder: SurfaceHolder = overlayPaintingView.holder
-                val canvas = holder.lockCanvas() ?: return
-                val path = Path()
-                path.moveTo(midPointX, midPointY)
-                path.lineTo(touchPoint.x, touchPoint.y)
-                canvas.drawPath(path, strokePaint)
-                holder.unlockCanvasAndPost(canvas)
-            }
-            lastPoint = null
-            hasMidPoint = false
-        }
+        override fun onRawDrawingTouchPointMoveReceived(touchPoint: TouchPoint?) {}
 
         override fun onPenActive(point: TouchPoint?) {
+            // Enable SF rendering — enters scribble mode for input routing
+            // and real-time visual feedback.
             touchHelper.setRawDrawingEnabled(true)
-            // Keep SF rendering disabled — we render on Canvas ourselves.
+            touchHelper.isRawDrawingRenderEnabled = true
         }
 
-        override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {}
+        override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {
+            // Full stroke data available — render a high-quality version on
+            // Canvas that will become visible on the pen-up e-ink refresh.
+            // The SurfaceView (setZOrderOnTop) is composited above the
+            // SF-rendered framebuffer, so our anti-aliased stroke overlays
+            // the rough SF stroke.
+            renderStrokeOnCanvas(touchPointList)
+        }
 
         override fun onBeginRawErasing(b: Boolean, touchPoint: TouchPoint?) {}
-
         override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint?) {}
-
         override fun onRawErasingTouchPointMoveReceived(touchPoint: TouchPoint?) {}
-
         override fun onRawErasingTouchPointListReceived(touchPointList: TouchPointList?) {}
 
         override fun onPenUpRefresh(refreshRect: RectF?) {
-            // Trigger a clean e-ink refresh to show the Canvas-rendered stroke
-            refreshEink(refreshRect)
+            // Exit scribble mode — releases input pipeline so finger touches
+            // pass through to the underlying app again.
+            touchHelper.isRawDrawingRenderEnabled = false
             super.onPenUpRefresh(refreshRect)
         }
     }
