@@ -9,7 +9,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
@@ -17,7 +16,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.View.OnLayoutChangeListener
@@ -39,7 +37,7 @@ private const val STROKE_WIDTH = 3.0f
 private const val WATCHDOG_INTERVAL_MS = 2000L
 
 class OverlayShowingService : Service() {
-    private val strokePaint = Paint()
+    private val paint = Paint()
 
     private lateinit var touchHelper: TouchHelper
     private lateinit var wm: WindowManager
@@ -47,7 +45,6 @@ class OverlayShowingService : Service() {
     private lateinit var overlayParams: WindowManager.LayoutParams
 
     private var touchHelperInitialized = false
-
     private val watchdogHandler = Handler(Looper.getMainLooper())
     private val watchdogRunnable = object : Runnable {
         override fun run() {
@@ -120,50 +117,10 @@ class OverlayShowingService : Service() {
     }
 
     private fun initPaint() {
-        strokePaint.isAntiAlias = true
-        strokePaint.style = Paint.Style.STROKE
-        strokePaint.color = Color.BLACK
-        strokePaint.strokeWidth = STROKE_WIDTH
-        strokePaint.strokeCap = Paint.Cap.ROUND
-        strokePaint.strokeJoin = Paint.Join.ROUND
-    }
-
-    /**
-     * Render a complete stroke from a TouchPointList onto the SurfaceView Canvas
-     * with anti-aliasing and quadratic bezier smoothing.
-     * Called after the SF-rendered real-time stroke is done, to overlay a
-     * higher-quality version that becomes visible on the pen-up e-ink refresh.
-     */
-    private fun renderStrokeOnCanvas(points: TouchPointList) {
-        val allPoints = points.points ?: return
-        if (allPoints.size < 2) return
-
-        val holder: SurfaceHolder = overlayPaintingView.holder
-        val canvas = holder.lockCanvas() ?: return
-
-        val path = Path()
-        val first = allPoints[0]
-        path.moveTo(first.x, first.y)
-
-        if (allPoints.size == 2) {
-            path.lineTo(allPoints[1].x, allPoints[1].y)
-        } else {
-            // Quadratic bezier smoothing: use midpoints as endpoints,
-            // actual points as control points.
-            for (i in 1 until allPoints.size - 1) {
-                val p = allPoints[i]
-                val next = allPoints[i + 1]
-                val midX = (p.x + next.x) / 2f
-                val midY = (p.y + next.y) / 2f
-                path.quadTo(p.x, p.y, midX, midY)
-            }
-            // Final segment to the last point
-            val last = allPoints[allPoints.size - 1]
-            path.lineTo(last.x, last.y)
-        }
-
-        canvas.drawPath(path, strokePaint)
-        holder.unlockCanvasAndPost(canvas)
+        paint.isAntiAlias = true
+        paint.style = Paint.Style.STROKE
+        paint.color = Color.BLACK
+        paint.strokeWidth = STROKE_WIDTH
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -179,8 +136,6 @@ class OverlayShowingService : Service() {
 
                 if (!touchHelperInitialized) {
                     touchHelper.setStrokeColor(Color.BLACK)
-                    // SF rendering handles real-time display (rough but instant).
-                    // Canvas overlay (renderStrokeOnCanvas) provides final quality.
                     touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_MARKER)
                     touchHelper.openRawDrawing()
                     touchHelper.setStrokeWidth(STROKE_WIDTH)
@@ -222,29 +177,21 @@ class OverlayShowingService : Service() {
         override fun onRawDrawingTouchPointMoveReceived(touchPoint: TouchPoint?) {}
 
         override fun onPenActive(point: TouchPoint?) {
-            // Enable SF rendering — enters scribble mode for input routing
-            // and real-time visual feedback.
             touchHelper.setRawDrawingEnabled(true)
             touchHelper.isRawDrawingRenderEnabled = true
         }
 
-        override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {
-            // Full stroke data available — render a high-quality version on
-            // Canvas that will become visible on the pen-up e-ink refresh.
-            // The SurfaceView (setZOrderOnTop) is composited above the
-            // SF-rendered framebuffer, so our anti-aliased stroke overlays
-            // the rough SF stroke.
-            renderStrokeOnCanvas(touchPointList)
-        }
+        override fun onRawDrawingTouchPointListReceived(touchPointList: TouchPointList) {}
 
         override fun onBeginRawErasing(b: Boolean, touchPoint: TouchPoint?) {}
+
         override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint?) {}
+
         override fun onRawErasingTouchPointMoveReceived(touchPoint: TouchPoint?) {}
+
         override fun onRawErasingTouchPointListReceived(touchPointList: TouchPointList?) {}
 
         override fun onPenUpRefresh(refreshRect: RectF?) {
-            // Exit scribble mode — releases input pipeline so finger touches
-            // pass through to the underlying app again.
             touchHelper.isRawDrawingRenderEnabled = false
             super.onPenUpRefresh(refreshRect)
         }
